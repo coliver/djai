@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# WSL wrapper: run djai.py under Windows Python, which can reach the loopMIDI port.
+here="$(cd "$(dirname "$0")" && pwd)"
+args=()
+for a in "$@"; do
+    # Plan files live on the WSL side; hand Windows Python a path it can open.
+    if [[ -f "$a" ]]; then a="$(wslpath -w "$a")"; fi
+    args+=("$a")
+done
+# Replies come back over one shared port, so two callers at once can read each
+# other's answers. Take a lock so only one command talks to Mixxx at a time.
+exec flock /tmp/djai.lock python.exe "$(wslpath -w "$here/djai.py")" "${args[@]}"

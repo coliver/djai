@@ -1,0 +1,11 @@
+{
+  "name": "djai",
+  "private": true,
+  "description": "DJAI: AI co-DJ for Mixxx and the Pioneer DDJ-FLX4",
+  "scripts": {
+    "lint": ".venv/bin/ruff check .",
+    "test": "npm run test:js && npm run test:py",
+    "test:js": "node --test --experimental-test-coverage --test-coverage-include='mixxx/controllers/*.js' --test-coverage-lines=90 --test-coverage-branches=90 --test-coverage-functions=90 tests/js/*.test.js",
+    "test:py": ".venv/bin/pytest --cov --cov-report=term-missing --cov-fail-under=90"
+  }
+}

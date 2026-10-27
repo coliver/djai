@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.coverage
+node_modules/
+
+# The sets (pools, plans, analysis, hand-mix recordings, logs) and Mixxx backups stay local.
+sets/*
+!sets/.gitkeep
+mixxx/archive/
+
+# Machine-specific settings (copy djai.example.toml).
+djai.toml

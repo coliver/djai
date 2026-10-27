@@ -1,0 +1,5 @@
+* text=auto eol=lf
+# Upstream Mixxx files and recorded data keep their bytes as they are.
+mixxx/stock-2.5.0/** -text
+mixxx/controllers/*.midi.xml -text
+sets/live/** -text

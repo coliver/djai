@@ -1,0 +1,14 @@
+[tool.pytest.ini_options]
+testpaths = ["tests/py"]
+addopts = "-q"
+
+[tool.coverage.run]
+branch = true
+source = ["tools"]
+
+[tool.ruff]
+line-length = 180
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]

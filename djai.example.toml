@@ -1,0 +1,18 @@
+# Copy to djai.toml and fill in. djai.toml is machine-specific and stays out of version control.
+# Paths the Linux/WSL side opens use WSL form (/mnt/c/...); the Mixxx program path is the Windows form.
+
+# Mixxx's user folder; deploy.sh copies the controller mappings into its controllers/ subfolder.
+mixxx_user_dir = "/mnt/c/Users/YOU/AppData/Local/Mixxx"
+
+# The Mixxx program, as Windows sees it (single quotes keep the backslashes literal).
+mixxx_exe = 'C:\Program Files\Mixxx\mixxx.exe'
+
+# Root of the music library. Track "location" fields in sets/*.json are relative to this folder.
+music_dir = "/mnt/c/Users/YOU/Downloads/music"
+
+# Where Mixxx writes its recordings.
+recordings_dir = "/mnt/c/Users/YOU/Music/Mixxx/Recordings"
+
+# Optional. Part of the Windows audio output name Mixxx plays to; overnight.py turns that output down for an
+# unattended run and back up afterwards. Leave empty (or out) to leave the volume alone.
+speaker_match = ""

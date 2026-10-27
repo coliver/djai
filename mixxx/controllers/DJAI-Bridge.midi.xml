@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<MixxxMIDIPreset schemaVersion="1" mixxxVersion="2.5">
+    <info>
+        <name>DJAI Bridge</name>
+        <author>DJAI</author>
+        <description>Remote control for Claude over a loopMIDI port named "DJAI". SysEx text commands; see DJAI-bridge.js.</description>
+    </info>
+    <controller id="DJAI">
+        <scriptfiles>
+            <!-- No prefix: Mixxx calls incomingData on every prefixed script, and this one has none. -->
+            <file functionprefix="" filename="DJAI-transition.js"/>
+            <file functionprefix="DJAIBridge" filename="DJAI-bridge.js"/>
+        </scriptfiles>
+        <controls>
+            <!-- MidiController only hands SysEx to scripts through a Script-Binding
+                 mapping keyed on status 0xF0 with control 0xFF. -->
+            <control>
+                <group>[Master]</group>
+                <key>DJAIBridge.incomingData</key>
+                <status>0xF0</status>
+                <midino>0xFF</midino>
+                <options>
+                    <Script-Binding/>
+                </options>
+            </control>
+        </controls>
+        <outputs>
+        </outputs>
+    </controller>
+</MixxxMIDIPreset>
