@@ -3,13 +3,18 @@
     wave_mix.py render <audio>                                     whole track, kept in sets/waveforms/
     wave_mix.py render <audio> <out.png> [start] [duration] [tick]  a zoom
     wave_mix.py onsets <audio> <start> <duration> [rise]           kick onsets in a window, to the millisecond
+    wave_mix.py fit <audio> <approx bpm> <window start> ...         beat and first beat fitted to the kicks, and sections
     wave_mix.py run sets/plan.wave.json [log file] [--no-record] [--resume K seconds-since-recording-started]
 
 render draws a track's waveform: the full signal on top, the bass below 120 Hz underneath, with labelled time
 ticks. Read sections, breakdowns and drops off the whole track (saved as sets/waveforms/<artist - title>.png, so each
 track is drawn once), then zoom in with start and duration: a 0.3 s window shows a kick onset to about a
 millisecond. <audio> is a path, or a location relative to music_dir. onsets reads the same bass line as numbers: the
-time each kick rises out of the low band, so anchors are not limited by how well a pixel can be read.
+time each kick rises out of the low band, so anchors are not limited by how well a pixel can be read. fit takes the
+onsets of 8 s windows starting at the given times (pick stretches with a steady kick), fits one beat length and
+first beat to all of them by least squares, drops kicks more than 12 ms off and fits again. It prints the fit, then
+the track's sections as runs of bars with a similar bass level, and keeps both in sets/analysis/fits/<artist - title>.json.
+An rms of a few ms is a good fit; tens of ms means a bassline is being taken for kicks, so pick other windows.
 
 run plays a set whose points were read off those pictures. Every time is in seconds of that track's own file,
 so no beatgrid is used anywhere: the bridge's beat counter is only a clock here. Each track in the plan has
@@ -51,10 +56,16 @@ import sys
 import time
 from pathlib import Path
 
+import analyze_bars
 import config
 import run_set as rs
 
 WAVEFORMS = rs.REPO / "sets" / "waveforms"
+FITS = rs.REPO / "sets" / "analysis" / "fits"
+FIT_WINDOW = 8.0             # seconds of onsets per window given to fit
+FIT_RISE = 0.85              # onsets() rise for fitting: high, so bass notes between kicks do not count
+FIT_OUTLIER = 0.012          # seconds off the fitted line before a kick is left out
+SECTION_DB = 3.5             # a change in bass level this big starts a new section
 WIDTH = 2400
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 SWAP_BEATS = 2
@@ -137,6 +148,63 @@ def onsets(audio, start, duration, rise=0.7):
             found.append(round(start + j / 1000, 3))
             ready = i + REFRACTORY_MS
     return found
+
+
+def line(xs, ts):
+    """Least-squares beat length and time of beat 0 through (beat number, time) points."""
+    n = len(xs)
+    mx, mt = sum(xs) / n, sum(ts) / n
+    spread = sum((x - mx) ** 2 for x in xs)
+    if not spread:
+        raise SystemExit("all the kicks fall on one beat; give windows further apart")
+    period = sum((x - mx) * (t - mt) for x, t in zip(xs, ts, strict=True)) / spread
+    return period, mt - period * mx
+
+
+def sections(low):
+    """Runs of bars whose bass level stays within SECTION_DB of the run's first bar, as "first-last:dB"."""
+    runs, first = [], 0
+    for b in range(1, len(low) + 1):
+        if b == len(low) or abs(low[b] - low[first]) > SECTION_DB:
+            run = low[first:b]
+            runs.append(f"{first}-{b - 1}:{sum(run) / len(run):.0f}")
+            first = b
+    return runs
+
+
+def fit(audio, bpm, windows):
+    """Fit one beat length and first beat to the kick onsets in FIT_WINDOW seconds from each window start, then
+    profile the track's bars on that grid. Returns the fit with the per-bar low and full levels.
+
+    Windows are taken in order and the line refitted after each, so every kick is numbered with a beat length already
+    measured on the kicks before it: `bpm` only has to be right to a few tenths."""
+    path = audio if Path(audio).exists() else config.music_path(audio)
+    found = [onsets(path, w, FIT_WINDOW, FIT_RISE) for w in sorted(windows)]
+    every = [t for window in found for t in window]
+    if len(every) < 2:
+        raise SystemExit(f"only {len(every)} kicks found; pick windows with a steady kick")
+    period, t0, times = 60 / bpm, every[0], []
+    for window in found:
+        times += window
+        for _ in range(2):              # number each kick from the current line, then refit
+            beats = [round((t - t0) / period) for t in times]
+            if len(set(beats)) > 1:
+                period, t0 = line(beats, times)
+    for _ in range(3):                  # fills and bass notes land off the line: fit to the kicks near it, out of all of them
+        numbered = [(round((t - t0) / period), t) for t in every]
+        keep = [(b, t) for b, t in numbered if abs(t - t0 - period * b) <= FIT_OUTLIER]
+        if len(keep) < 10:
+            break
+        beats, times = [b for b, _ in keep], [t for _, t in keep]
+        period, t0 = line(beats, times)
+    errors = [t - t0 - period * b for b, t in zip(beats, times, strict=True)]
+    left_out = [t - t0 - period * round((t - t0) / period) for t in every]
+    first = t0 - int(t0 / period) * period
+    bars = analyze_bars.profile(path, first, 60 / period)
+    return {"location": audio, "beat": round(period, 6), "bpm": round(60 / period, 4), "first_beat": round(first, 4),
+            "rms_ms": round((sum(e * e for e in errors) / len(errors)) ** 0.5 * 1000, 2), "kicks": len(times),
+            "off_ms": [round(e * 1000) for e in left_out if abs(e) > FIT_OUTLIER],
+            "sections": sections(bars["low"]), "low": bars["low"], "full": bars["full"]}
 
 
 def speeds(tracks):
@@ -370,6 +438,13 @@ if __name__ == "__main__":
         times = onsets(args[1], *(float(a) for a in args[2:5]))
         print(" ".join(f"{t:.3f}" for t in times))
         print("gaps", " ".join(f"{b - a:.3f}" for a, b in zip(times, times[1:], strict=False)))
+        sys.exit(0)
+    if args[:1] == ["fit"] and len(args) >= 4:
+        result = fit(args[1], float(args[2]), [float(a) for a in args[3:]])
+        FITS.mkdir(parents=True, exist_ok=True)
+        (FITS / (track_name(args[1]) + ".json")).write_text(json.dumps(result), encoding="utf-8")
+        print(json.dumps({k: v for k, v in result.items() if k not in ("sections", "low", "full")}))
+        print("sections (bars from first_beat: low dB):", " ".join(result["sections"]))
         sys.exit(0)
     if args[:1] != ["run"] or len(args) < 2:
         raise SystemExit(__doc__)

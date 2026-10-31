@@ -42,7 +42,7 @@ Do not call `djai.py` directly from WSL, and do not run two callers at once (the
 | `build_full_plan.py` | merges the approved `plan.next.*.json` pair plans into one frame-based plan |
 | `set_autodj_queue.py` | puts a plan's tracks on top of the Auto DJ queue (Mixxx must be closed) |
 | `run_set.py` | plays and records a planned set through the bridge |
-| `wave_mix.py` | draws waveforms to read mix points by eye (`render`), lists kick onsets to the millisecond (`onsets`), and plays a set planned from them with no beatgrid (`run`), writing where each blend sits in the recording |
+| `wave_mix.py` | draws waveforms to read mix points by eye (`render`), lists kick onsets to the millisecond (`onsets`), fits a beat and first beat to the kicks and lists the sections (`fit`, kept in `sets/analysis/fits/`), and plays a set planned from them with no beatgrid (`run`), writing where each blend sits in the recording |
 | `onair.sh`, `onair.py` | say a line on the stream: speech from the TTS server (`tts_url`), Mixxx mic talkover on, played into the VB-Audio cable |
 | `overnight.py` | quiet unattended run: lowers the speakers, runs `run_set.py`, resumes if it dies |
 | `check_grid.py`, `beat_phase.py` | measure beatgrid accuracy; judge by where the bass swell lands, not kick onset |

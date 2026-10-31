@@ -22,14 +22,18 @@ def levels(path, first_beat, samples_per_bar, band):
             for v in re.findall(r"RMS_level=(\S+)", out)]
 
 
-def main(path, first_beat, bpm):
+def profile(path, first_beat, bpm):
     first_beat, bpm = float(first_beat), float(bpm)
     samples_per_bar = round(4 * 60 / bpm * 44100)
     bands = {"full": "", "low": "lowpass=f=120,lowpass=f=120,", "high": "highpass=f=4000,"}
     with ThreadPoolExecutor(len(bands)) as pool:   # one ffmpeg decode per band, side by side
-        profile = dict(zip(bands, pool.map(lambda band: levels(path, first_beat, samples_per_bar, band), bands.values()), strict=True))
-    profile["bar_seconds"] = 4 * 60 / bpm
-    json.dump(profile, sys.stdout)
+        result = dict(zip(bands, pool.map(lambda band: levels(path, first_beat, samples_per_bar, band), bands.values()), strict=True))
+    result["bar_seconds"] = 4 * 60 / bpm
+    return result
+
+
+def main(path, first_beat, bpm):
+    json.dump(profile(path, first_beat, bpm), sys.stdout)
 
 
 if __name__ == "__main__":

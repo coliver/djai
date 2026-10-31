@@ -492,3 +492,68 @@ def test_cli_resume(run_script, clock, fake_run, tmp_path, capsys):
     sim.decks[1] = Sim.fresh(102.0, 120.0, 0.0)
     run_script(wm, "run", str(write_json(tmp_path / "plan.json", plan())), "--resume", "1", "50", "--no-record")
     assert "resumed at track 2 on deck 2" in capsys.readouterr().out
+
+
+def fake_kicks(monkeypatch, beat=0.43, first=0.12, off=None, extra=()):
+    """onsets() that returns the kicks of a steady grid in each window, with some moved by `off` {beat number: s}
+    and `extra` stray onsets (bass notes) added; and a bar profile that needs no ffmpeg."""
+    off = off or {}
+
+    def onsets(path, start, duration, rise):
+        n0 = int((start - first) / beat) + 1
+        hits = [first + n * beat + off.get(n, 0.0) for n in range(n0, n0 + int(duration / beat))]
+        return sorted(hits + [t for t in extra if start <= t < start + duration])
+
+    monkeypatch.setattr(wm, "onsets", onsets)
+    monkeypatch.setattr(wm.analyze_bars, "profile", lambda path, first_beat, bpm: {"low": [-40, -41, -8, -7, -8, -30], "full": [-20] * 6})
+
+
+def test_fit_finds_the_grid_from_the_kicks(monkeypatch, tmp_path):
+    fake_kicks(monkeypatch, off={300: 0.03, 301: -0.02}, extra=[62.33])     # a fill and a bass note, both left out
+    audio = tmp_path / "02. A - B.mp3"
+    audio.write_bytes(b"")
+    result = wm.fit(str(audio), 139.0, [10.0, 60.0, 128.0, 200.0])
+    assert result["beat"] == pytest.approx(0.43, abs=1e-6)
+    assert result["first_beat"] == pytest.approx(0.12, abs=1e-4)
+    assert result["rms_ms"] < 0.01
+    assert result["off_ms"] == [-140, 30, -20]           # the bass note between two kicks, then the fill
+    assert result["sections"] == ["0-1:-40", "2-4:-8", "5-5:-30"]
+
+
+def test_fit_left_out_kicks(monkeypatch, tmp_path):
+    fake_kicks(monkeypatch, off={5: 0.02})
+    result = wm.fit(str(tmp_path), 139.0, [0.0])        # a path that exists is used as it is
+    assert result["kicks"] == 17 and result["off_ms"] == [20]
+
+
+def test_fit_needs_kicks(monkeypatch):
+    monkeypatch.setattr(wm, "onsets", lambda *a: [1.0])
+    monkeypatch.setattr(wm.config, "music_path", lambda loc: "/m/" + loc)
+    with pytest.raises(SystemExit, match="only 1 kicks"):
+        wm.fit("Acid/x.mp3", 140.0, [0.0])
+
+
+def test_line_needs_more_than_one_beat():
+    with pytest.raises(SystemExit, match="one beat"):
+        wm.line([3, 3], [1.0, 1.001])
+
+
+def test_cli_fit(run_script, fake_run, monkeypatch, tmp_path, capsys):
+    beats = [0.1 + 0.43 * k for k in range(18)]
+
+    def ffmpeg(args, kwargs):
+        if "s16le" in args:
+            return done(stdout=kicks(beats, 8.0))
+        return done(stdout="RMS_level=-8\nRMS_level=-30\n")
+
+    fake_run(ffmpeg)
+    monkeypatch.setattr(rs, "REPO", tmp_path)
+    audio = tmp_path / "02. C - D.mp3"
+    audio.write_bytes(b"")
+    with pytest.raises(SystemExit) as stop:
+        run_script(wm, "fit", str(audio), "140", "0")
+    assert stop.value.code == 0
+    out = capsys.readouterr().out
+    assert '"bpm": 139.53' in out and "0-0:-8 1-1:-30" in out
+    saved = json.loads((tmp_path / "sets" / "analysis" / "fits" / "C - D.json").read_text())
+    assert saved["low"] == [-8.0, -30.0]
