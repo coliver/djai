@@ -16,3 +16,6 @@ recordings_dir = "/mnt/c/Users/YOU/Music/Mixxx/Recordings"
 # Optional. Part of the Windows audio output name Mixxx plays to; overnight.py turns that output down for an
 # unattended run and back up afterwards. Leave empty (or out) to leave the volume alone.
 speaker_match = ""
+
+# Optional. The speech server onair.sh asks for a spoken line (a quackerbox-style POST /say?stream=1 that returns a wav).
+tts_url = "http://127.0.0.1:8769/say"

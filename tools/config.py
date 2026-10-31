@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 REQUIRED = ("mixxx_user_dir", "mixxx_exe", "music_dir", "recordings_dir")
-OPTIONAL = {"speaker_match": ""}
+OPTIONAL = {"speaker_match": "", "tts_url": "http://127.0.0.1:8769/say"}
 
 
 def load():
