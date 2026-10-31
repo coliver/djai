@@ -105,7 +105,7 @@
             </control>
 
             <control>
-                <description>PLAY/PAUSE (DECK1) - press - Play, or vinyl brake to a stop while playing</description>
+                <description>PLAY/PAUSE (DECK1) - press - Play, or stop while playing (vinyl brake if brakeOnPause is set)</description>
                 <group>[Channel1]</group>
                 <key>PioneerDDJFLX4.playPressed</key>
                 <status>0x90</status>
@@ -125,7 +125,7 @@
                 </options>
             </control>
             <control>
-                <description>PLAY/PAUSE (DECK2) - press - Play, or vinyl brake to a stop while playing</description>
+                <description>PLAY/PAUSE (DECK2) - press - Play, or stop while playing (vinyl brake if brakeOnPause is set)</description>
                 <group>[Channel2]</group>
                 <key>PioneerDDJFLX4.playPressed</key>
                 <status>0x91</status>

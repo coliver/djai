@@ -493,7 +493,15 @@ test("samplerPadShiftPressed stops a playing sampler, ejects a loaded one, ignor
     assert.deepEqual(engine.calls, []);
 });
 
-test("play brakes a playing deck and starts a stopped one", () => {
+test("play stops a playing deck dead by default", () => {
+    engine.set(D1, "play", 1);
+    P().playPressed(0, 0, 127, 0, D1);
+    assert.equal(engine.getValue(D1, "play"), 0);
+    assert.ok(!engine.calls.some(c => c[0] === "brake"));
+});
+
+test("play brakes a playing deck and starts a stopped one when brakeOnPause is set", () => {
+    P().brakeOnPause = true;
     P().playPressed(0, 0, 0, 0, D1);
     assert.deepEqual(engine.calls, []);
     P().playPressed(0, 0, 127, 0, D1);
@@ -503,6 +511,7 @@ test("play brakes a playing deck and starts a stopped one", () => {
     engine.set(D2, "play", 1);
     P().playPressed(0, 0, 127, 0, D2);
     assert.deepEqual(engine.calls.at(-1), ["brake", 2, true, 1.0, 0.9]);
+    P().brakeOnPause = false;
 });
 
 test("toggleQuantize toggles on press only", () => {

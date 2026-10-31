@@ -737,8 +737,9 @@ PioneerDDJFLX4.samplerPadShiftPressed = function(_channel, _control, value, _sta
     }
 };
 
-// PLAY/PAUSE: a playing deck brakes to a stop like a turntable, a stopped deck plays.
-// Lower PioneerDDJFLX4.brakeRate for a faster stop, closer to 1 for a slower one.
+// PLAY/PAUSE: a stopped deck plays. A playing deck stops dead, or with brakeOnPause set,
+// brakes to a stop like a turntable. Lower brakeRate for a faster brake, closer to 1 for a slower one.
+PioneerDDJFLX4.brakeOnPause = false;
 PioneerDDJFLX4.brakeRate = 0.9;
 
 PioneerDDJFLX4.playPressed = function(_channel, _control, value, _status, group) {
@@ -747,7 +748,11 @@ PioneerDDJFLX4.playPressed = function(_channel, _control, value, _status, group)
     }
     const deck = Number(group.replace(/\D/g, ""));
     if (engine.getValue(group, "play")) {
-        engine.brake(deck, true, 1.0, PioneerDDJFLX4.brakeRate);
+        if (PioneerDDJFLX4.brakeOnPause) {
+            engine.brake(deck, true, 1.0, PioneerDDJFLX4.brakeRate);
+        } else {
+            engine.setValue(group, "play", 0);
+        }
     } else {
         engine.setValue(group, "play", 1);
     }

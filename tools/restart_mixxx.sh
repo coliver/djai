@@ -17,7 +17,12 @@ fi
 (cd /mnt/c && setsid cmd.exe /c start "" "$mixxx_exe" --log-flush-level debug "$@" </dev/null >/dev/null 2>&1 &)
 for i in $(seq 1 60); do
     sleep 1
-    "$here/djai" query ping >/dev/null 2>&1 && { echo "Mixxx up after ${i}s"; exit 0; }
+    if "$here/djai" query ping >/dev/null 2>&1; then
+        # Mixxx does not resume broadcasting by itself after a restart.
+        "$here/djai" send "set [Shoutcast] enabled 1" >/dev/null 2>&1
+        echo "Mixxx up after ${i}s"
+        exit 0
+    fi
 done
 echo "DJAI Bridge did not answer" >&2
 exit 1
