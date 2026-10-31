@@ -1,5 +1,6 @@
 import json
 import re
+import time
 
 import pytest
 import run_set as rs
@@ -70,6 +71,7 @@ class Sim:
         if group.startswith("[Channel"):
             d = self.decks[int(group[8])]
             return {"play": d["play"], "volume": d["vol"], "rate": d["rate"], "rateRange": 0.08, "cue_point": d["cue"],
+                    "playposition": d["t"] / d["dur"],
                     "track_samplerate": 44100, "file_bpm": d["bpm"]}.get(key, 0)
         return self.controls.get(f"{group},{key}", 0)
 
@@ -149,7 +151,8 @@ def mixxx(clock, fake_run):
 
 
 @pytest.fixture(autouse=True)
-def fresh_state(monkeypatch, tmp_path):
+def fresh_state(monkeypatch, tmp_path, clock):
+    monkeypatch.setattr(wm, "wall", clock.monotonic)
     monkeypatch.setattr(wm, "clocks", {})
     monkeypatch.setattr(wm, "matched", {})
     monkeypatch.setattr(wm, "marks", [])
@@ -168,6 +171,11 @@ def test_start_and_target_line_up_the_drop_with_the_swap():
     assert wm.start_at(t, 1) == pytest.approx(14.0)
     assert wm.start_at(t, 2) == pytest.approx(50 - 16 * 0.98)
     assert wm.target(t[1], t[2], 86.0) == pytest.approx(50.0)
+
+
+def test_wall_is_the_real_time_clock(monkeypatch):
+    monkeypatch.undo()
+    assert abs(wm.wall() - time.time()) < 1
 
 
 def test_track_name_drops_the_track_number():
@@ -212,6 +220,48 @@ def test_the_rider_pulls_the_incoming_deck_into_phase(mixxx, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "ahead at" in out and "slower by 2%" in out
     assert max(abs(e) for e in errors) < 0.004
+
+
+def test_bass_knocked_down_after_the_swap_is_put_back(mixxx, tmp_path, capsys):
+    sim = mixxx()
+    path = write_json(tmp_path / "plan.json", plan())
+    knocked = []
+
+    def knock():
+        a, b = sim.decks[1], sim.decks[2]
+        if not knocked and a["dur"] == 100.0 and a["t"] > 37:
+            b["eq"][0] = 0.0
+            knocked.append(a["t"])
+
+    sim.on_tick = knock
+    wm.main(str(path))
+    assert "deck 2 bass 0.00 and mids 1.00 after the swap, put back up" in capsys.readouterr().out
+    assert sim.decks[2]["eq"][0] == 1.0
+
+
+def test_bass_down_when_the_outgoing_stops_is_put_back(mixxx, tmp_path, capsys):
+    sim = mixxx()
+    t = plan()
+    t[0]["end"] = 36.5
+    path = write_json(tmp_path / "plan.json", t)
+
+    def knock():
+        a, b = sim.decks[1], sim.decks[2]
+        if a["dur"] == 100.0 and a["t"] > 36.1:
+            b["eq"][1] = 0.5
+
+    sim.on_tick = knock
+    wm.main(str(path))
+    assert "deck 2 bass 1.00 and mids 0.50 after the swap, put back up" in capsys.readouterr().out
+
+
+def test_a_jump_still_to_come_on_the_outgoing_track_survives_the_clear(mixxx, tmp_path):
+    sim = mixxx()
+    t = plan()
+    t[0]["jump"] = [15.0, 17.0]       # the opener skips once while it plays alone, before its blend is scheduled
+    path = write_json(tmp_path / "plan.json", t)
+    wm.main(str(path))
+    assert [(n, round(a), round(b)) for n, a, b in sim.trace] == [(1, 15, 17), (2, 40, 60)]
 
 
 def test_incoming_that_never_started_is_started(mixxx, tmp_path, capsys):

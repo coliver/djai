@@ -77,6 +77,13 @@ def label(t):
     return f"{round(t, 3):g}"
 
 
+def wall():
+    """The recording clock. Not time.monotonic(): under WSL that runs about 3.5 percent slow against the host (measured
+    2026-10-31), which put the blend marks of an hour's set 15 s further out at every blend. The real-time clock is kept
+    in step with Windows."""
+    return time.time()
+
+
 def track_name(path):
     """The file name without its folder, extension or leading track number: "02. A - B.flac" is "A - B"."""
     return re.sub(r"^\d+\.\s*", "", Path(path).stem)
@@ -190,7 +197,9 @@ def schedule(out_n, out_t, in_n, in_t):
     m, swap, end = out_t["mix"], out_t["swap"], out_t["end"]
     quarter = (swap - m) / 4
     hold_mids, hold_highs = in_t.get("hold_mids", 1), in_t.get("hold_highs", 1)
-    lines = [f"set {rs.eq(in_n)} parameter3 {hold_highs}",
+    # Drop whatever an earlier blend left pending: an entry that never came due would fire on the next track loaded
+    # on that deck, by that deck's clock. Then put back this track's own jump, which is still to come.
+    lines = ["clear", f"set {rs.eq(in_n)} parameter3 {hold_highs}",
              f"at {o} {beat(out_n, m):.4f} set {i} play 1",
              f"ramp {o} {beat(out_n, m):.4f} {beat(out_n, m + quarter):.4f} {i} volume 0 1",
              f"ramp {o} {beat(out_n, m + quarter / 2):.4f} {beat(out_n, m + quarter):.4f} {rs.eq(in_n)} parameter2 0 {hold_mids}"]
@@ -207,11 +216,21 @@ def schedule(out_n, out_t, in_n, in_t):
                   f"ramp {o} {beat(out_n, swap + span * 0.45):.4f} {beat(out_n, end - fade):.4f} {rs.eq(out_n)} parameter3 1 0"]
     lines += [f"ramp {o} {beat(out_n, end - fade):.4f} {beat(out_n, end):.4f} {o} volume - 0",
               f"at {o} {beat(out_n, end):.4f} set {o} play 0"]
-    if "jump" in in_t:
-        skip_from, skip_to = in_t["jump"]
-        lines.append(f"at {i} {beat(in_n, skip_from):.4f} set {i} playposition {skip_to / in_t['duration']:.9f}")
+    for n, t in ((out_n, out_t), (in_n, in_t)):
+        if "jump" in t and (n == in_n or rs.get(o, "playposition") * t["duration"] < t["jump"][0]):
+            skip_from, skip_to = t["jump"]
+            d = rs.deck(n)
+            lines.append(f"at {d} {beat(n, skip_from):.4f} set {d} playposition {skip_to / t['duration']:.9f}")
     rs.send(*lines)
     rs.log(f"  scheduled: deck {in_n} in at {m:.3f} s of the outgoing track, bass swap at {swap:.3f}, outgoing ends at {end:.3f}")
+
+
+def bass_up(n, d):
+    """Once the bass has swapped, the incoming deck carries the set: its bass and mids must be all the way up.
+    On 2026-10-31 one was left at 0 after its swap ramp, cause unknown, so check and put them back."""
+    if d["eq"][0] < 1 or d["eq"][1] < 1:
+        rs.send(f"set {rs.eq(n)} parameter1 1", f"set {rs.eq(n)} parameter2 1")
+        rs.log(f"  deck {n} bass {d['eq'][0]:.2f} and mids {d['eq'][1]:.2f} after the swap, put back up")
 
 
 def ride(out_n, out_t, in_n, in_t, speed_out):
@@ -221,14 +240,17 @@ def ride(out_n, out_t, in_n, in_t, speed_out):
         s = rs.state()
         d_out, d_in = s["decks"][str(out_n)], s["decks"][str(in_n)]
         if not d_out["play"]:
+            bass_up(in_n, d_in)
             return d_in
         t_out = d_out["pos"] * d_out["dur"]
+        if t_out > out_t["swap"] + 0.5 * speed_out:
+            bass_up(in_n, d_in)
         if not d_in["play"]:
             time.sleep(min(max((out_t["mix"] - t_out) / speed_out - 2, 0.5), 5))
             continue
         if not marks or marks[-1]["in"] != in_t["title"]:
             # The recording clock is the wall clock since it started; the outgoing deck says how long ago the mix began.
-            at_mix = time.monotonic() - started[0] - (t_out - out_t["mix"]) / speed_out
+            at_mix = wall() - started[0] - (t_out - out_t["mix"]) / speed_out
             marks.append({"out": out_t["title"], "in": in_t["title"], "mix": round(at_mix, 2),
                           "swap": round(at_mix + (out_t["swap"] - out_t["mix"]) / speed_out, 2),
                           "end": round(at_mix + (out_t["end"] - out_t["mix"]) / speed_out, 2)})
@@ -288,7 +310,7 @@ def main(plan_path, resume=None, recording_age=0.0):
         for n in (1, 2):
             prepare(n, tracks[n - 1], v[n - 1], start_at(tracks, n - 1))
         rs.send(f"set {rs.eq(1)} parameter1 1", f"set {rs.eq(1)} parameter2 1", f"set {rs.deck(1)} volume 1")
-        started[0] = time.monotonic()
+        started[0] = wall()
         rs.set_recording(True)
         rs.log("recording started" if rs.record else "not recording")
         rs.send(f"set {rs.deck(1)} play 1")
@@ -298,7 +320,7 @@ def main(plan_path, resume=None, recording_age=0.0):
         playing = next((n for n in (1, 2) if rs.loaded_track(s, n, tracks) == resume and s["decks"][str(n)]["play"]), None)
         if playing is None:
             raise SystemExit(f"track {resume + 1} is not playing: {s}")
-        started[0] = time.monotonic() - recording_age
+        started[0] = wall() - recording_age
         marks[:] = json.loads(marks_path.read_text(encoding="utf-8")) if marks_path.exists() else []
         rs.send("clear")
         adopt(playing, v[resume])
